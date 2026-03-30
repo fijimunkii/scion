@@ -40,6 +40,49 @@ image-build/scripts/build-images.sh --registry ghcr.io/myorg --push
 scion config set image_registry ghcr.io/myorg
 ```
 
+#### Local registry (no remote account required)
+
+If you don't have a remote registry available, you can run one locally. On macOS with Docker Desktop, the buildx builder runs inside a container and cannot reach `localhost` directly — use `host.docker.internal` instead.
+
+**1. Start a local registry:**
+```bash
+docker run -d -p 5000:5000 --name scion-registry registry:2
+```
+
+**2. Create a buildkitd config to allow the insecure registry:**
+```bash
+cat > /tmp/buildkitd.toml << 'EOF'
+[registry."host.docker.internal:5000"]
+  http = true
+  insecure = true
+EOF
+```
+
+**3. Recreate the buildx builder with that config:**
+```bash
+docker buildx rm scion-builder 2>/dev/null
+docker buildx create --name scion-builder --config /tmp/buildkitd.toml --use
+docker buildx inspect --bootstrap
+```
+
+**4. Also add the registry to Docker's insecure list** (Docker Desktop → Settings → Docker Engine):
+```json
+{
+  "insecure-registries": ["host.docker.internal:5000"]
+}
+```
+Apply and restart Docker Desktop.
+
+**5. Build and configure:**
+```bash
+image-build/scripts/build-images.sh --registry host.docker.internal:5000/scion --target all --platform linux/arm64 --push
+scion config set image_registry host.docker.internal:5000/scion
+```
+
+:::note
+The local registry container stops when Docker restarts. Run `docker start scion-registry` to bring it back up. The buildx builder config is also lost on restart — re-run steps 3–4 if pushes start failing.
+:::
+
 ### Option 2: GitHub Actions (GHCR)
 
 If your project is hosted on GitHub:
